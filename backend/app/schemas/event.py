@@ -35,3 +35,7 @@ class EventOut(EventBase):
     status: EventStatus
     source_id: uuid.UUID
     created_at: datetime
+
+class EventCreate(EventBase):
+    """Used by manual submission — clubs won't have a source_id, just a name."""
+    source_name: str
