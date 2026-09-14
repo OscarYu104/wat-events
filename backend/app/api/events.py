@@ -33,7 +33,7 @@ def submit_event(payload: EventCreate, db: Session = Depends(get_db)):
     event = Event(
         **payload.model_dump(exclude={"source_name"}),
         source_id=source.id,
-        status=EventStatus.published,  # temporary: publish immediately so you can test GET /events too
+        status=EventStatus.pending_review,
     )
     db.add(event)
     db.commit()
