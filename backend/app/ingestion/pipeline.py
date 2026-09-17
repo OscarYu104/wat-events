@@ -6,6 +6,7 @@ from app.ingestion.base import BaseConnector, RawEvent
 from app.models.event import Event, EventStatus, EventCategory
 from app.models.source import Source
 from app.services.dedup import compute_dedup_hash
+from app.services.category_inference import infer_categories
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,8 @@ def _upsert_event(raw: RawEvent, source: Source, db: Session) -> bool:
     if existing:
         return False
 
+    categories = infer_categories(raw.title, raw.description)
+
     event = Event(
         title=raw.title,
         description=raw.description,
@@ -59,7 +62,7 @@ def _upsert_event(raw: RawEvent, source: Source, db: Session) -> bool:
         source_id=source.id,
         raw_source_id=raw.raw_source_id,
         dedup_hash=dedup_hash,
-        categories=[EventCategory.other],  
+        categories=categories,  
         status=EventStatus.pending_review,
     )
     db.add(event)
