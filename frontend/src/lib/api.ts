@@ -11,6 +11,7 @@ export interface Event {
   categories: string[];
   is_free: boolean;
   cost_amount: string | null;
+  external_url: string | null;
 }
 
 export interface EventFilters {
