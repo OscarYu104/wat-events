@@ -17,6 +17,9 @@ class ICSConnector(BaseConnector):
         events: list[RawEvent] = []
 
         for component in cal.walk("VEVENT"):
+            if "RRULE" in component:
+                continue  # skip recurring events for now
+
             uid = str(component.get("UID"))
             title = str(component.get("SUMMARY", "Untitled event"))
             description = str(component.get("DESCRIPTION", "")) or None

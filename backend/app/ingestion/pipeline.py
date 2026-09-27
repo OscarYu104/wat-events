@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, date, timezone
 
 from sqlalchemy.orm import Session
 
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_connector(connector: BaseConnector, source: Source, db: Session) -> dict:
-    stats = {"fetched": 0, "created": 0, "skipped_duplicate": 0, "skipped_no_date": 0, "errors": 0}
+    stats = {"fetched": 0, "created": 0, "skipped_duplicate": 0, "skipped_past": 0, "skipped_no_date": 0, "errors": 0}
 
     try:
         raw_events = connector.fetch()
@@ -24,11 +25,8 @@ def run_connector(connector: BaseConnector, source: Source, db: Session) -> dict
 
     for raw in raw_events:
         try:
-            created = _upsert_event(raw, source, db)
-            if created:
-                stats["created"] += 1
-            else:
-                stats["skipped_duplicate"] += 1
+            result = _upsert_event(raw, source, db)
+            stats[result] += 1
         except Exception:
             logger.exception("Failed to process event %r from %s", raw.title, source.name)
             stats["errors"] += 1
@@ -37,22 +35,34 @@ def run_connector(connector: BaseConnector, source: Source, db: Session) -> dict
     return stats
 
 
-def _upsert_event(raw: RawEvent, source: Source, db: Session) -> bool:
+def _upsert_event(raw: RawEvent, source: Source, db: Session) -> str:
     if not raw.start_time:
-        return False
+        return "skipped_no_date"
 
-    dedup_hash = compute_dedup_hash(raw.title, raw.start_time)
+    start = raw.start_time
+    if isinstance(start, datetime):
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+    elif isinstance(start, date):
+        start = datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
+    else:
+        return "skipped_no_date"
+
+    if start < datetime.now(timezone.utc):
+        return "skipped_past"
+
+    dedup_hash = compute_dedup_hash(str(source.id), raw.title, start)
 
     existing = db.query(Event).filter(Event.dedup_hash == dedup_hash).first()
     if existing:
-        return False
+        return "skipped_duplicate"
 
     categories = infer_categories(raw.title, raw.description)
 
     event = Event(
         title=raw.title,
         description=raw.description,
-        start_time=raw.start_time,
+        start_time=start,
         end_time=raw.end_time,
         location_name=raw.location_name,
         is_online=raw.is_online,
@@ -62,9 +72,9 @@ def _upsert_event(raw: RawEvent, source: Source, db: Session) -> bool:
         source_id=source.id,
         raw_source_id=raw.raw_source_id,
         dedup_hash=dedup_hash,
-        categories=categories,  
+        categories=categories,
         status=EventStatus.pending_review,
     )
     db.add(event)
     db.flush()
-    return True
+    return "created"
